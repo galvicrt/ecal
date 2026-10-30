@@ -1,0 +1,326 @@
+name: Build Ubuntu
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-ubuntu:
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, ubuntu-24.04, ubuntu-22.04, ubuntu-26.04-arm, ubuntu-24.04-arm, ubuntu-22.04-arm]
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      # enable starting Qt GUI Applications
+      QT_QPA_PLATFORM: offscreen
+      PROJECT_NAME: ecal
+
+    steps:
+
+    - name: Install Dependencies
+      run: |
+        common_packages=(
+          ccache ninja-build
+          doxygen graphviz
+          libcurl4-openssl-dev
+          libprotobuf-dev libprotoc-dev protobuf-compiler
+          libhdf5-dev
+          libyaml-cpp-dev
+          libspdlog-dev
+          libtclap-dev
+          libtinyxml2-dev
+          libcapnp-dev capnproto
+          libgtest-dev libgmock-dev
+          python3 python3-venv python3-dev
+        )
+        specific_packages=()
+
+        if [[ ${{ matrix.os }} == ubuntu-26.04* ]]; then
+          specific_packages=(
+            qt6-base-dev qt6-svg-dev
+          )
+        elif [[ ${{ matrix.os }} == ubuntu-24.04* ]]; then
+          specific_packages=(
+            qt6-base-dev qt6-svg-dev
+          )
+        elif [[ ${{ matrix.os }} == ubuntu-22.04* ]]; then
+          specific_packages=(
+            qtbase5-dev libqt5opengl5-dev libqt5svg5-dev
+          )
+        fi
+
+        # Disable man-db update
+        echo 'set man-db/auto-update false' | sudo debconf-communicate >/dev/null
+        sudo dpkg-reconfigure man-db
+
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends "${common_packages[@]}" "${specific_packages[@]}"
+
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        submodules:  'false'
+        fetch-depth: 0
+        filter: 'tree:0' # Download all commits but blobs and trees on demand
+
+    - name: Set variables
+      run: |
+        # Use git describe to get the tag / commit description
+        VERSION="$(git describe --tags --dirty)"
+
+        # Remove the leading 'v' from the tag
+        VERSION="${VERSION#v}"
+
+        CODENAME="$(lsb_release --codename --short)"
+
+        echo "PROJECT_VERSION=$VERSION" >> "$GITHUB_ENV"
+        echo "ubuntu_codename=$CODENAME" >> "$GITHUB_ENV"
+        echo "DEB_VERSION=$VERSION-$CODENAME" >> "$GITHUB_ENV"
+
+    - name: Initialize required submodules
+      run: |
+        git submodule update --init \
+          thirdparty/asio/asio \
+          thirdparty/benchmark/benchmark \
+          thirdparty/ecaludp/ecaludp \
+          thirdparty/fineftp/fineftp-server \
+          thirdparty/ftxui/ftxui \
+          thirdparty/nanobind/nanobind \
+          thirdparty/protozero/protozero \
+          thirdparty/qwt/qwt \
+          thirdparty/recycle/recycle \
+          thirdparty/tsl-robin-map/tsl-robin-map \
+          thirdparty/tcp_pubsub/tcp_pubsub \
+          thirdparty/termcolor/termcolor
+
+    - name: Create venv for building docs
+      shell: bash
+      run: |
+        mkdir ".venv_build"
+        python3 -m venv ".venv_build"
+        source ".venv_build/bin/activate"
+        pip install --upgrade pip
+        pip install wheel setuptools
+        pip install -r "$GITHUB_WORKSPACE/doc/requirements.txt"
+
+    - name: Prepare ccache and restore cache
+      id: ccache_cache-restore
+      uses: ./.github/actions/ccache-prepare
+      with:
+        key-root: ${{ matrix.os }}
+        cache-dir: ${{ github.workspace }}/.ccache
+
+    - name: CMake
+      id: cmake-configure
+      run: |
+        source ".venv_build/bin/activate"
+
+        cmake -S . -B _build -G "Ninja" \
+        -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=cmake/submodule_dependencies.cmake \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+        -DECAL_USE_HDF5=ON \
+        -DECAL_USE_QT=ON \
+        -DECAL_USE_CURL=ON \
+        -DECAL_USE_CAPNPROTO=ON \
+        -DECAL_USE_FTXUI=ON \
+        -DECAL_USE_NPCAP=OFF \
+        -DECAL_BUILD_DOCS=ON \
+        -DECAL_BUILD_APPS=ON \
+        -DECAL_BUILD_SAMPLES=ON \
+        -DECAL_BUILD_TIMEPLUGINS=ON \
+        -DECAL_BUILD_PY_BINDING=ON \
+        -DECAL_BUILD_CSHARP_BINDING=OFF \
+        -DECAL_BUILD_TESTS=ON \
+        -DECAL_BUILD_BENCHMARKS=ON \
+        -DECAL_INSTALL_SAMPLE_SOURCES=ON \
+        -DECAL_THIRDPARTY_BUILD_BENCHMARK=ON \
+        -DECAL_THIRDPARTY_BUILD_CMAKE_FUNCTIONS=ON \
+        -DECAL_THIRDPARTY_BUILD_CURL=OFF \
+        -DECAL_THIRDPARTY_BUILD_FINEFTP=ON \
+        -DECAL_THIRDPARTY_BUILD_GTEST=OFF \
+        -DECAL_THIRDPARTY_BUILD_HDF5=OFF \
+        -DECAL_THIRDPARTY_BUILD_PROTOBUF=OFF \
+        -DECAL_THIRDPARTY_BUILD_QWT=ON \
+        -DECAL_THIRDPARTY_BUILD_RECYCLE=ON \
+        -DECAL_THIRDPARTY_BUILD_SPDLOG=OFF \
+        -DECAL_THIRDPARTY_BUILD_TCLAP=OFF \
+        -DECAL_THIRDPARTY_BUILD_TCP_PUBSUB=ON \
+        -DECAL_THIRDPARTY_BUILD_TINYXML2=OFF \
+        -DECAL_THIRDPARTY_BUILD_YAML-CPP=OFF \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_SYSCONFDIR=/etc \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_LOCALSTATEDIR=/var \
+        -DCMAKE_INSTALL_LIBDIR=lib/$(arch)-linux-gnu \
+        -DPython_FIND_VIRTUALENV=ONLY
+      shell: bash
+
+    - name: Build Release
+      run: |
+        cmake --build _build --parallel -- -k 0
+
+    - name: Save ccache cache to GitHub
+      uses: ./.github/actions/ccache-save
+      with:
+        key: ${{steps.ccache_cache-restore.outputs.cache-primary-key}}
+        cache-dir: ${{ github.workspace }}/.ccache
+      # Always save cache if configure succeeded (even if the build failed)
+      if: ${{ always() && steps.cmake-configure.outcome == 'success' }}
+
+    - name: Run Tests
+      run: ctest -V --test-dir _build
+
+    - name: CPack
+      run: cpack -G DEB -R '${{ env.DEB_VERSION }}' --config _build/CPackConfig.cmake
+
+    - name: Upload Debian
+      uses: actions/upload-artifact@v7
+      with:
+        name: '${{env.PROJECT_NAME}}_${{ env.DEB_VERSION }}-${{runner.arch}}'
+        path: _deploy/*.deb
+        
+    - name: Upload Benchmark Executables
+      uses: actions/upload-artifact@v7
+      with:
+        name: 'benchmarks_${{ matrix.os }}'
+        path: ${{ github.workspace }}/_build/bin/ecal_benchmark*
+        
+    - name: Upload eCAL Libraries
+      uses: actions/upload-artifact@v7
+      with:
+        name: 'libraries_${{ matrix.os }}'
+        path: ${{ github.workspace }}/_build/lib/*
+        
+    #---------------------------------------------------------------------------------------------------
+    
+  run-benchmarks:
+    if: github.repository == 'eclipse-ecal/ecal' && github.ref_name == 'master'
+    needs: build-ubuntu
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os_version: [ubuntu-24.04, ubuntu-22.04, ubuntu-24.04-arm, ubuntu-22.04-arm]
+        # List of all benchmark types, corresponding to an executable
+        bm_type: [pubsub, pubsub_config, pubsub_multi, service, setup]
+    
+    runs-on: ${{ matrix.os_version }}
+    
+    env:
+      # Name of the benchmark log file without extension
+      LOG_FILE_NAME: ecal_benchmark_${{ matrix.bm_type }}_log
+
+    steps:
+    - name: Fetch Throughput Calculator Python Script
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: |
+            ecal/benchmarks/util/throughput_calculator.py
+        sparse-checkout-cone-mode: false
+        
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends "libyaml-cpp-dev"
+    
+    - name: Download eCAL Libraries
+      uses: actions/download-artifact@v8
+      with:
+        name: 'libraries_${{ matrix.os_version }}'
+        path: ${{ github.workspace }}/_build/lib
+    
+    - name: Download Benchmark Executables
+      uses: actions/download-artifact@v8
+      with:
+        name: 'benchmarks_${{ matrix.os_version }}'
+        path: ${{ github.workspace }}/_build/bin
+    
+    - name: Install Bencher CLI
+      uses: bencherdev/bencher@main
+    
+    - name: Run Benchmark
+      run: |
+        chmod +x '${{ github.workspace }}/_build/bin/ecal_benchmark_${{ matrix.bm_type }}'
+        ${{ github.workspace }}/_build/bin/ecal_benchmark_${{ matrix.bm_type }} --benchmark_out=${{ env.LOG_FILE_NAME }}.json --benchmark_out_format=json
+      working-directory: ${{ github.workspace }}
+    
+    - name: Calculate Throughput
+      if: startsWith(matrix.bm_type, 'pubsub')
+      run: |
+        python ecal/benchmarks/util/throughput_calculator.py -f ${{ github.workspace }}/${{ env.LOG_FILE_NAME }}.json -m 0
+      working-directory: ${{ github.workspace }}
+      
+    # Override throughput calculation for multithreaded benchmarks
+    - name: Calculate Throughput (Multithreaded)
+      if: matrix.bm_type == 'pubsub_multi'
+      run: |
+        python ecal/benchmarks/util/throughput_calculator.py -f ${{ github.workspace }}/${{ env.LOG_FILE_NAME }}.json -m 1
+      working-directory: ${{ github.workspace }}
+        
+    - name: Log Benchmark Results with Bencher
+      run: |
+        bencher run \
+        --project ecal \
+        --token '${{secrets.BENCHER_API_TOKEN}}' \
+        --branch '${{ github.ref_name }}' \
+        --testbed '${{ matrix.os_version }}' \
+        --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+        --adapter cpp_google \
+        --file ${{ github.workspace }}/${{ env.LOG_FILE_NAME }}.json
+        
+    - name: Log Calculated Throughput with Bencher
+      if: startsWith(matrix.bm_type, 'pubsub')
+      run: |
+        bencher run \
+        --project ecal \
+        --token '${{secrets.BENCHER_API_TOKEN}}' \
+        --branch '${{ github.ref_name }}' \
+        --testbed '${{ matrix.os_version }}' \
+        --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+        --adapter json \
+        --file ${{ github.workspace }}/${{ env.LOG_FILE_NAME }}_throughput-calculation.json
+        
+    #---------------------------------------------------------------------------------------------------
+        
+  assess-runner-performance:
+    needs: run-benchmarks
+  
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04, ubuntu-24.04-arm, ubuntu-22.04-arm]
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Install Bencher CLI
+      uses: bencherdev/bencher@main
+        
+    - name: Fetch 7z-Score Python Script
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: |
+            ecal/benchmarks/util/7z_score.py
+        sparse-checkout-cone-mode: false
+
+    - name: Run 7-Zip Benchmark
+      run: |
+        python ecal/benchmarks/util/7z_score.py
+      working-directory: ${{ github.workspace }}
+    
+    - name: Log Result with Bencher
+      run: |
+        bencher run \
+        --project ecal \
+        --token '${{secrets.BENCHER_API_TOKEN}}' \
+        --branch '${{ github.ref_name }}' \
+        --testbed '${{ matrix.os }}' \
+        --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+        --adapter json \
+        --file ${{ github.workspace }}/7z_score.json
+    
+    #---------------------------------------------------------------------------------------------------

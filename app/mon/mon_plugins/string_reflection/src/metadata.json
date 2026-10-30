@@ -1,0 +1,20 @@
+{
+  "Version": "v0.1.0",
+  "Author": "Florian Reimold",
+  "Name": "String Reflection",
+  
+  "Priority": 1,
+
+  "SupportedTopics": [
+    {
+      "Type": "std::string",
+      "Format": "base"
+    },
+    {
+      "Type": "string",
+      "Format": "utf-8"
+    }
+  ],
+  
+  "OptionalTopics": []
+}

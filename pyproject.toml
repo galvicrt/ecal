@@ -1,0 +1,134 @@
+[project] # Project metadata
+name = "eclipse-ecal"
+readme = "lang/python/README.md"
+requires-python = ">=3.8"
+license = "Apache-2.0"
+license-files = [
+  "LICENSE.txt",
+  "NOTICE.md",
+  "LICENSES/LICENSES_python_bindings/**/*",       # Matches all "main" licenses in subdirs
+  "LICENSES/LICENSES_python_bindings/**/**/*"     # Matches all licenses from "thirdparty" sub-subdirs (unfortunatelly, the ** is not recursive here)
+]
+authors = [
+  { "name" = "Eclipse eCAL Team", "email" = "ecal-dev@eclipse.org" },
+]
+keywords = ["IPC", "Middleware"]
+classifiers = ["Topic :: Scientific/Engineering"]
+dependencies = ["protobuf > 3.8, < 7", "packaging"]
+# setuptools-scm will grab the version from the latest git tag
+dynamic = ["version"]
+description = "High performance publish/subscribe middleware"
+
+[project.urls]
+"Documentation" = "https://eclipse-ecal.github.io/ecal"
+"Source" = "https://github.com/eclipse-ecal/ecal"
+
+[build-system] # How pip and other frontends should build this project
+requires = ["hatchling", "hatch-vcs", "scikit-build-core~=0.11.5"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel.hooks.scikit-build]
+experimental = true
+
+[tool.hatch.envs.default]
+dependencies = [
+  "pytest"
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets]
+# Files to include in the source archive to build from
+sdist.only-include = [
+  "/CMakeLists.txt",
+  "/pyproject.toml",
+  "/LICENSE.txt",
+  "/NOTICE.txt",
+  "/README.md",
+  "/app/app_pb/",
+  "/cmake/",
+  "/contrib/",
+  "/cpack/",
+  "/ecal/",
+  "/lib/",
+  "/licenses_python_binding/",
+  "lang/c/",
+  "lang/python/",
+
+  "serialization/protobuf/",
+  "serialization/string/",
+  "serialization/common/", 
+
+  "thirdparty/cmakefunctions/",
+  "thirdparty/ecaludp/",
+  "thirdparty/nanobind/",
+  "thirdparty/protobuf/",
+  "thirdparty/recycle/",
+  "thirdparty/tclap/",
+  "thirdparty/tcp_pubsub/",
+  "thirdparty/tsl-robin-map/",  
+  "thirdparty/yaml-cpp/",
+
+  "thirdparty/asio/",
+  "!thirdparty/asio/asio/asio/src/",
+
+  # HDF5 has a lot of stuff we don't use
+  "/thirdparty/hdf5/",
+  "!/thirdparty/hdf5/hdf5/tools/",
+  "!/thirdparty/hdf5/hdf5/**/test*/",
+  "!/thirdparty/hdf5/hdf5/**/examples*/",
+  "!/thirdparty/hdf5/hdf5/hl/",
+  "!/thirdparty/hdf5/hdf5/doxygen/",
+  "!/thirdparty/hdf5/hdf5/java/",
+  "!/thirdparty/hdf5/hdf5/fortran/",
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+  "lang/python/tests/",
+]
+python_files = "*_test.py"
+
+
+[tool.scikit-build]
+# Will be installed from PyPI if system version is too old/missing
+cmake.version = ">=3.24" # For SET_DEPENDENCY_PROVIDER
+build.targets = ["ecal_python"] # Targets to build
+build-dir = "./_python_build"   # Build directory for unisolated builds
+install.components = ["python"] # CMake component to install
+
+[tool.scikit-build.cmake.define]
+CMAKE_PROJECT_TOP_LEVEL_INCLUDES = "cmake/submodule_dependencies.cmake"
+ECAL_USE_HDF5 = "ON"
+ECAL_USE_QT = "OFF"
+ECAL_USE_CURL = "OFF"
+ECAL_USE_FTXUI = "OFF"
+ECAL_BUILD_APPS = "OFF"
+ECAL_BUILD_SAMPLES = "OFF"
+ECAL_BUILD_TIMEPLUGINS = "OFF"
+ECAL_BUILD_C_BINDING = "OFF"
+ECAL_BUILD_PY_BINDING = "ON"
+BUILD_SHARED_LIBS = "OFF"
+ECAL_INSTALL_SAMPLE_SOURCES = "OFF"
+ECAL_THIRDPARTY_BUILD_CMAKE_FUNCTIONS = "ON"
+ECAL_THIRDPARTY_BUILD_TCP_PUBSUB = "ON"
+ECAL_THIRDPARTY_BUILD_RECYCLE = "ON"
+ECAL_THIRDPARTY_BUILD_PROTOBUF = "ON"
+ECAL_THIRDPARTY_BUILD_FINEFTP = "OFF"
+ECAL_THIRDPARTY_BUILD_FTXUI = "OFF"
+ECAL_THIRDPARTY_BUILD_SPDLOG = "OFF"
+ECAL_THIRDPARTY_BUILD_TERMCOLOR = "OFF"
+ECAL_THIRDPARTY_BUILD_TINYXML2 = "OFF"
+ECAL_THIRDPARTY_BUILD_CURL = "OFF"
+ECAL_THIRDPARTY_BUILD_HDF5 = "ON"
+# Stop HDF5 trying to export eCALCoreTargets due to the hack
+# with HDF5_EXPORTED_TARGETS
+HDF5_EXTERNALLY_CONFIGURED = "ON"
+
+[tool.cibuildwheel]
+# Only support 64-bit builds for now as CMake gets confused when the
+# architecture changes and causes link errors with Python
+archs = ["auto64"]
+# eCAL has build errors on musl libc
+skip = [ "*-musllinux*" ]

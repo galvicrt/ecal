@@ -1,0 +1,152 @@
+/* ========================= eCAL LICENSE =================================
+ *
+ * Copyright (C) 2016 - 2025 Continental Corporation
+ * Copyright 2026 AUMOVIO and subsidiaries. All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * ========================= eCAL LICENSE =================================
+*/
+
+/**
+ * @brief  eCAL core functions
+**/
+
+#pragma once
+
+#include "ecal_global_accessors.h"
+#include <string>
+#include <vector>
+#if ECAL_CORE_REGISTRATION
+#include "registration/ecal_registration_provider.h"
+#include "registration/ecal_registration_receiver.h"
+#endif 
+#if ECAL_CORE_TIMEPLUGIN
+#include "time/ecal_timegate.h"
+#endif
+#include "logging/ecal_log_provider.h"
+#include "logging/ecal_log_receiver.h"
+#if ECAL_CORE_MONITORING
+#include "monitoring/ecal_monitoring_def.h"
+#endif
+#if ECAL_CORE_PUBLISHER
+#include "pubsub/ecal_pubgate.h"
+#endif
+#if ECAL_CORE_SUBSCRIBER
+#include "pubsub/ecal_subgate.h"
+#endif
+#if defined(ECAL_CORE_REGISTRATION_SHM) || defined(ECAL_CORE_TRANSPORT_SHM)
+#include "io/shm/ecal_memfile_pool.h"
+#include "io/shm/ecal_memfile_db.h"
+#endif
+#if ECAL_CORE_SERVICE
+#include "service/ecal_servicegate.h"
+#include "service/ecal_clientgate.h"
+#endif
+#include "ecal_descgate.h"
+
+#include "readwrite/udp/ecal_reader_udp.h"
+#include "readwrite/tcp/ecal_reader_tcp.h"
+#include "readwrite/shm/ecal_reader_shm.h"
+
+#include "util/single_instance_helper.h"
+
+#include <memory>
+
+namespace eCAL
+{
+  class CGlobals
+  {
+    friend class eCAL::Util::CSingleInstanceHelper<CGlobals>;
+  public:
+    static std::shared_ptr<CGlobals> Create();
+
+    ~CGlobals();
+
+    bool Initialize    ( unsigned int components_);
+    bool IsInitialized (); 
+    bool IsInitialized ( unsigned int component_  );
+    
+    unsigned int GetComponents() const { return(components); };
+
+    bool Finalize();
+
+#if ECAL_CORE_MONITORING
+    const std::shared_ptr<CMonitoring>&                                   monitoring()             { return monitoring_instance; };
+#endif
+#if ECAL_CORE_TIMEPLUGIN
+    const std::shared_ptr<CTimeGate>&                                     timegate()               { return timegate_instance; };
+#endif
+#if ECAL_CORE_SUBSCRIBER
+    const std::shared_ptr<CSubGate>&                                      subgate()                { return subgate_instance; };
+#endif
+#if ECAL_CORE_PUBLISHER
+    const std::shared_ptr<CPubGate>&                                      pubgate()                { return pubgate_instance; };
+#endif
+#if ECAL_CORE_SERVICE
+    const std::shared_ptr<CServiceGate>&                                  servicegate()            { return servicegate_instance; };
+    const std::shared_ptr<CClientGate>&                                   clientgate()             { return clientgate_instance; };
+#endif
+#if ECAL_CORE_REGISTRATION
+    const std::shared_ptr<CRegistrationProvider>&                         registration_provider()  { return registration_provider_instance; };
+    const std::shared_ptr<CRegistrationReceiver>&                         registration_receiver()  { return registration_receiver_instance; };
+#endif
+#if defined(ECAL_CORE_REGISTRATION_SHM) || defined(ECAL_CORE_TRANSPORT_SHM)
+    const std::shared_ptr<CMemFileThreadPool>&                            memfile_pool()           { return memfile_pool_instance; };
+    const std::shared_ptr<CMemFileMap>&                                   memfile_map()            { return memfile_map_instance; };
+    
+#endif
+    const std::shared_ptr<CDescGate>&                                     descgate()               { return descgate_instance; };
+
+    const std::shared_ptr<eCAL::CUDPReaderLayer>&                         udp_reader_layer()       { return m_udp_reader_layer_instance; };
+    const std::shared_ptr<eCAL::CTCPReaderLayer>&                         tcp_reader_layer()       { return m_tcp_reader_layer_instance; };
+    const std::shared_ptr<eCAL::CSHMReaderLayer>&                         shm_reader_layer()       { return m_shm_reader_layer_instance; };
+
+  private:
+    CGlobals() = default;
+    CGlobals(const CGlobals&) = delete;
+    CGlobals& operator=(const CGlobals&) = delete;
+
+    std::atomic<bool>                                                     initialized {false};
+    unsigned int                                                          components {0};
+#if ECAL_CORE_MONITORING
+    std::shared_ptr<CMonitoring>                                          monitoring_instance;
+#endif
+#if ECAL_CORE_TIMEPLUGIN
+    std::shared_ptr<CTimeGate>                                            timegate_instance;
+#endif
+#if ECAL_CORE_SUBSCRIBER
+    std::shared_ptr<CSubGate>                                             subgate_instance;
+#endif
+#if ECAL_CORE_PUBLISHER
+    std::shared_ptr<CPubGate>                                             pubgate_instance;
+#endif
+#if ECAL_CORE_SERVICE
+    std::shared_ptr<CServiceGate>                                         servicegate_instance;
+    std::shared_ptr<CClientGate>                                          clientgate_instance;
+#endif
+#if ECAL_CORE_REGISTRATION
+    std::shared_ptr<CRegistrationProvider>                                registration_provider_instance;
+    std::shared_ptr<CRegistrationReceiver>                                registration_receiver_instance;
+#endif
+#if defined(ECAL_CORE_REGISTRATION_SHM) || defined(ECAL_CORE_TRANSPORT_SHM)
+    std::shared_ptr<CMemFileThreadPool>                                   memfile_pool_instance;
+    std::shared_ptr<CMemFileMap>                                          memfile_map_instance;
+    
+#endif
+    std::shared_ptr<CDescGate>                                            descgate_instance;
+    std::shared_ptr<eCAL::CUDPReaderLayer>                                m_udp_reader_layer_instance;
+    std::shared_ptr<eCAL::CTCPReaderLayer>                                m_tcp_reader_layer_instance;
+    std::shared_ptr<eCAL::CSHMReaderLayer>                                m_shm_reader_layer_instance;
+  };
+}

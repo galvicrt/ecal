@@ -1,0 +1,37 @@
+name: Cherry-pick-to-branch
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  cherry-pick:
+    runs-on: ubuntu-latest
+
+    steps:
+      # The action needs a specific fine-grained access token with more
+      # permissions. We cannot use the generic GITHUB_TOKEN (i.e. the GitHub
+      # Bot), as commits and PRs created by that bot cannot trigger workflow
+      # runs.
+      #
+      # The token must be renewed every year. The action fails with a clear
+      # error when the token has expired and warns ahead of time when it is
+      # about to expire.
+      #
+      # Mandatory Token Permissions:
+      #   Actions:       Read and write
+      #   Contents:      Read and write
+      #   Metadata:      Read-only
+      #   Pull requests: Read and write
+      #   Workflows:     Read and write
+      #
+      - name: Cherry-pick to labeled target branches
+        id: cherry-pick
+        uses: eclipse-ecal/cherry-pick-to@v1
+        with:
+          token: ${{ secrets.CHERRY_PICK_GITHUB_TOKEN }}
+          allowed-target-branches: 'support/*'
+          use-draft-pr: 'true'
+          token-expiry-warning-days: '30'
+          token-expiry-warning-in-pr-body: 'true'
+          error-hint: 'Renewal as in this helpdesk issue: https://gitlab.eclipse.org/eclipsefdn/helpdesk/-/issues/7432'

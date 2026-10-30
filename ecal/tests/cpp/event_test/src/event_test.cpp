@@ -1,0 +1,85 @@
+/* ========================= eCAL LICENSE =================================
+ *
+ * Copyright (C) 2016 - 2025 Continental Corporation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * ========================= eCAL LICENSE =================================
+*/
+
+#include "ecal_event.h"
+
+#include <gtest/gtest.h>
+#include <string>
+#include <thread>
+
+#include <ecal_utils/barrier.h>
+
+TEST(core_cpp_core, Event_EventSetGet)
+{ 
+  // global parameter
+  const std::string event_name = "my_event";
+
+  // create named event
+  eCAL::EventHandleT event_handle;
+  EXPECT_EQ(true, eCAL::gOpenEvent(&event_handle, event_name));
+
+  // get none set event
+  EXPECT_EQ(false, gWaitForEvent(event_handle, 10));
+
+  // set event
+  EXPECT_EQ(true, gSetEvent(event_handle));
+
+  // get set event
+  EXPECT_EQ(true, gWaitForEvent(event_handle, 100));
+}
+
+TEST(core_cpp_core, Event_OpenEventInParallel)
+{
+  // parameter
+  const std::string event_name = "my_parallel_event";
+  const int runs = 10000;
+
+  Barrier barrier(2);
+  
+  auto signaller = [&barrier, &event_name, runs](bool has_ownership)
+  {
+      for (int i = 0; i < runs; ++i)
+      {
+        eCAL::EventHandleT event_handle;
+        barrier.wait();
+        eCAL::gOpenNamedEvent(&event_handle, event_name, has_ownership);
+        EXPECT_EQ(true, gSetEvent(event_handle));
+        barrier.wait();
+        eCAL::gCloseEvent(event_handle);
+      }
+  };
+
+  auto waiter = [&barrier, &event_name, runs](bool has_ownership)
+  {
+      for (int i = 0; i < runs; ++i)
+      {
+          eCAL::EventHandleT event_handle;
+          barrier.wait();
+          eCAL::gOpenNamedEvent(&event_handle, event_name, has_ownership);
+          EXPECT_EQ(true, gWaitForEvent(event_handle, 100)) << "at iteration " << i;
+          barrier.wait();
+          eCAL::gCloseEvent(event_handle);
+      }
+  };
+
+  std::thread event_worker_thread_1(signaller, true);
+  std::thread event_worker_thread_2(waiter, false);
+  event_worker_thread_1.join();
+  event_worker_thread_2.join();
+}
